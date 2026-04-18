@@ -1,9 +1,15 @@
 const { app, request, registerUser } = require('./setup');
+const { generateCheckMacValue } = require('../src/services/ecpay');
 
 describe('Orders API', () => {
   let userToken;
   let productId;
   let orderId;
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
 
   beforeAll(async () => {
     // Register a user for order tests
@@ -100,6 +106,74 @@ describe('Orders API', () => {
     expect(res.body.data).toHaveProperty('order_no');
     expect(res.body.data).toHaveProperty('items');
     expect(Array.isArray(res.body.data.items)).toBe(true);
+  });
+
+  it('should create ecpay checkout form fields for a pending order', async () => {
+    const res = await request(app)
+      .post(`/api/orders/${orderId}/payment/ecpay/checkout`)
+      .set('Authorization', `Bearer ${userToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.error).toBeNull();
+    expect(res.body.data).toHaveProperty('action', 'https://payment-stage.ecpay.com.tw/Cashier/AioCheckOut/V5');
+    expect(res.body.data).toHaveProperty('method', 'POST');
+    expect(res.body.data).toHaveProperty('merchant_trade_no');
+    expect(res.body.data.fields).toHaveProperty('MerchantTradeNo', res.body.data.merchant_trade_no);
+    expect(res.body.data.fields).toHaveProperty('CheckMacValue');
+    expect(res.body.data.fields).toHaveProperty('ClientBackURL');
+  });
+
+  it('should verify ecpay payment status and mark order as paid', async () => {
+    const checkoutRes = await request(app)
+      .post(`/api/orders/${orderId}/payment/ecpay/checkout`)
+      .set('Authorization', `Bearer ${userToken}`);
+
+    const merchantTradeNo = checkoutRes.body.data.merchant_trade_no;
+    const orderDetailRes = await request(app)
+      .get(`/api/orders/${orderId}`)
+      .set('Authorization', `Bearer ${userToken}`);
+
+    const queryResponse = {
+      MerchantID: '3002607',
+      MerchantTradeNo: merchantTradeNo,
+      StoreID: '',
+      RtnCode: '1',
+      RtnMsg: 'ok',
+      TradeNo: '2404180000001',
+      TradeAmt: String(orderDetailRes.body.data.total_amount),
+      PaymentDate: '2026/04/18 20:00:00',
+      PaymentType: 'Credit_CreditCard',
+      TradeDate: '2026/04/18 19:59:59',
+      TradeStatus: '1',
+      SimulatePaid: '0',
+      CustomField1: '',
+      CustomField2: '',
+      CustomField3: '',
+      CustomField4: ''
+    };
+
+    queryResponse.CheckMacValue = generateCheckMacValue(
+      queryResponse,
+      'pwFHCqoQZGmho4w6',
+      'EkRm7iFT261dpevs',
+      'sha256'
+    );
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => new URLSearchParams(queryResponse).toString()
+    });
+
+    const verifyRes = await request(app)
+      .post(`/api/orders/${orderId}/payment/ecpay/verify`)
+      .set('Authorization', `Bearer ${userToken}`);
+
+    expect(verifyRes.status).toBe(200);
+    expect(verifyRes.body.error).toBeNull();
+    expect(verifyRes.body.data.payment).toHaveProperty('is_paid', true);
+    expect(verifyRes.body.data.order).toHaveProperty('status', 'paid');
+    expect(verifyRes.body.data.order).toHaveProperty('ecpay_trade_no', '2404180000001');
   });
 
   it('should return 404 for non-existent order', async () => {

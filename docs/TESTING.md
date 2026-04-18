@@ -144,13 +144,15 @@
 - 未授權建單失敗
 - 訂單列表
 - 訂單詳情
+- 建立 ECPay AIO 付款表單欄位
+- 模擬 `QueryTradeInfo` 後將訂單更新為已付款
 - 不存在訂單 `404`
 
 未覆蓋但重要：
 
 - 庫存不足時建單失敗
-- 付款模擬 API
 - 非本人訂單存取失敗
+- callback route 的 CheckMacValue 驗證與更新流程
 
 ### `adminProducts.test.js`
 
@@ -286,6 +288,6 @@ describe('Order Payment API', () => {
 - 購物車累加同商品數量
 - Bearer token 無效時購物車直接 `401`
 - 建單時庫存不足
-- `PATCH /api/orders/:id/pay` 成功與失敗路徑
+- `POST /api/orders/:id/payment/ecpay/verify` 在 `TradeStatus=10200095` 時應標記為付款失敗
 - admin 刪除 pending 訂單商品回 `409`
 - 非本人查詢訂單應 `404`

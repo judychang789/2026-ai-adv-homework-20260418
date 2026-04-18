@@ -55,20 +55,20 @@
 | `JWT_SECRET` | JWT 簽章與驗證 | 必填，`server.js` 啟動會檢查 | 無預設；`.env.example` 提供範例值 |
 | `PORT` | HTTP 監聽埠號 | 選填 | `3001` |
 | `FRONTEND_URL` | CORS `origin` 設定 | 選填 | `http://localhost:3001`（程式中的 fallback） |
-| `BASE_URL` | 預期站點網址 | 目前未使用 | `.env.example` 中為 `http://localhost:3001` |
+| `BASE_URL` | 站點基底網址，供 ECPay `ReturnURL` / `ClientBackURL` 產生使用 | 選填但建議設定 | `.env.example` 中為 `http://localhost:3001` |
 | `ADMIN_EMAIL` | 管理員 seed 帳號 | 選填 | `admin@hexschool.com` |
 | `ADMIN_PASSWORD` | 管理員 seed 密碼 | 選填 | `12345678` |
-| `ECPAY_MERCHANT_ID` | 預留金流設定 | 目前未使用 | `.env.example` 範例值 |
-| `ECPAY_HASH_KEY` | 預留金流設定 | 目前未使用 | `.env.example` 範例值 |
-| `ECPAY_HASH_IV` | 預留金流設定 | 目前未使用 | `.env.example` 範例值 |
-| `ECPAY_ENV` | 預留金流環境 | 目前未使用 | `staging` |
+| `ECPAY_MERCHANT_ID` | ECPay MerchantID | 付款功能必填 | `.env.example` 範例值 |
+| `ECPAY_HASH_KEY` | ECPay CheckMacValue 金鑰 | 付款功能必填 | `.env.example` 範例值 |
+| `ECPAY_HASH_IV` | ECPay CheckMacValue 金鑰 | 付款功能必填 | `.env.example` 範例值 |
+| `ECPAY_ENV` | ECPay 環境切換 | 付款功能選填 | `staging` |
 | `NODE_ENV` | 控制 seed admin 密碼 hash 成本 | 選填 | 非 test 時視為一般環境 |
 
 注意：
 
 - `FRONTEND_URL` 只影響 CORS，對同源 EJS 頁面本身沒有影響。
-- `BASE_URL` 目前只是範本中的預留欄位，新增依賴它的功能前要先確認用途。
-- 若要實作真正第三方金流，不應直接沿用 `.env.example` 就假設已完成；要先補 route、callback、測試與文件。
+- `BASE_URL` 目前用於產生 ECPay 回跳網址，設定值需與實際啟動網址一致。
+- 本機開發不可把付款確認流程建立在 callback 一定會收到的前提上；目前應以 `QueryTradeInfo` 主動查詢為主。
 
 ## 新增 API 的步驟
 

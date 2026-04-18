@@ -68,9 +68,38 @@ function initializeDatabase() {
     );
   `);
 
+  ensureOrdersColumns();
+
   // Seed data
   seedAdminUser();
   seedProducts();
+}
+
+function ensureOrdersColumns() {
+  const columns = db.prepare('PRAGMA table_info(orders)').all();
+  const existingColumns = new Set(columns.map((column) => column.name));
+
+  if (!existingColumns.has('merchant_trade_no')) {
+    db.exec('ALTER TABLE orders ADD COLUMN merchant_trade_no TEXT');
+  }
+
+  if (!existingColumns.has('ecpay_trade_no')) {
+    db.exec('ALTER TABLE orders ADD COLUMN ecpay_trade_no TEXT');
+  }
+
+  if (!existingColumns.has('payment_type')) {
+    db.exec('ALTER TABLE orders ADD COLUMN payment_type TEXT');
+  }
+
+  if (!existingColumns.has('payment_date')) {
+    db.exec('ALTER TABLE orders ADD COLUMN payment_date TEXT');
+  }
+
+  if (!existingColumns.has('payment_checked_at')) {
+    db.exec('ALTER TABLE orders ADD COLUMN payment_checked_at TEXT');
+  }
+
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_merchant_trade_no ON orders(merchant_trade_no)');
 }
 
 function seedAdminUser() {

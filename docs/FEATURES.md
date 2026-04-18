@@ -8,10 +8,9 @@
 | 會員註冊 / 登入 / 個人資料 | 已完成 | JWT 登入、profile 查詢 |
 | 訪客 / 會員雙模式購物車 | 已完成 | JWT 與 `X-Session-Id` 雙模式 |
 | 會員結帳與訂單建立 | 已完成 | 從會員購物車建立訂單並扣庫存 |
-| 訂單付款模擬 | 已完成 | success / fail 狀態更新 |
+| 綠界付款與主動驗證 | 已完成 | 建立 AIO 付款單、回跳後主動查詢交易狀態 |
 | 後台商品管理 | 已完成 | 列表、新增、編輯、刪除 |
 | 後台訂單管理 | 已完成 | 列表、狀態篩選、詳情查看 |
-| 真實第三方金流 | 未完成 | `.env.example` 有變數，但未實作 |
 | 訪客購物車登入後合併 | 未完成 | 無自動 merge 流程 |
 | 付款失敗回補庫存 | 未完成 | 目前沒有補庫存機制 |
 
@@ -253,46 +252,57 @@
 | `401` | `UNAUTHORIZED` | 未登入或 token 無效 |
 | `404` | `NOT_FOUND` | 查詢不存在或不屬於自己的訂單 |
 
-## 訂單付款模擬
+## 綠界付款與主動驗證
 
 ### 行為描述
 
-付款不是第三方金流，而是訂單詳情頁上的兩顆模擬按鈕：
+訂單詳情頁若狀態為 `pending`，會提供：
 
-- 付款成功
-- 付款失敗
+- `前往綠界付款`
+- `重新確認付款狀態`
 
-前端對應 `public/js/pages/order-detail.js` 的 `simulatePay(action)`。送出後，後端只更新 `orders.status`，不會：
+前者會先向後端取回 AIO 表單欄位，前端再提交表單到綠界。後者則會在本地端主動呼叫綠界 `QueryTradeInfo` 驗證交易狀態。這是本專案對「本機環境收不到 Server Notify」的核心解法。
 
-- 寫入付款交易編號
-- 呼叫第三方 API
-- 做 callback 驗證
-- 回補庫存
-
-### `PATCH /api/orders/:id/pay`
+### `POST /api/orders/:id/payment/ecpay/checkout`
 
 - Header：
   - `Authorization: Bearer <token>`
-- 必填 body：
-  - `action`
-- 合法值：
-  - `success`
-  - `fail`
-- 狀態轉換：
-  - `success` -> `paid`
-  - `fail` -> `failed`
+- 回傳內容：
+  - `action`：AIO 付款 URL
+  - `method`：固定 `POST`
+  - `merchant_trade_no`
+  - `fields`：需提交到綠界的表單欄位
 - 前置條件：
   - 訂單必須存在且屬於目前會員
-  - `order.status` 必須是 `pending`
+  - 訂單不可已付款
+- 業務邏輯：
+  - 若訂單尚未建立付款單，或上一次狀態為 `failed`，會重新產生新的 `merchant_trade_no`
+  - 組裝 `MerchantTradeDate`, `TradeDesc`, `ItemName`, `ReturnURL`, `ClientBackURL`
+  - 以 SHA256 產生 CheckMacValue
+
+### `POST /api/orders/:id/payment/ecpay/verify`
+
+- Header：
+  - `Authorization: Bearer <token>`
+- 前置條件：
+  - 訂單必須存在且屬於目前會員
+  - 訂單必須已有 `merchant_trade_no`
+- 業務邏輯：
+  - 後端呼叫 `https://payment-stage.ecpay.com.tw/Cashier/QueryTradeInfo/V5`
+  - 驗證回應 `CheckMacValue`
+  - `TradeStatus === '1'` 時將訂單標記為 `paid`
+  - `TradeStatus === '10200095'` 時將訂單標記為 `failed`
+  - 其他狀態維持原值，但更新 `payment_checked_at`
 
 ### 錯誤碼與情境
 
 | HTTP | error | 情境 |
 | --- | --- | --- |
-| `400` | `VALIDATION_ERROR` | `action` 不是 `success` 或 `fail` |
-| `400` | `INVALID_STATUS` | 訂單狀態不是 `pending` |
+| `400` | `INVALID_STATUS` | 訂單已付款，不能再次建立付款單 |
+| `400` | `PAYMENT_NOT_INITIALIZED` | 尚未建立綠界付款單就查詢付款狀態 |
 | `401` | `UNAUTHORIZED` | 未登入或 token 無效 |
 | `404` | `NOT_FOUND` | 訂單不存在或不屬於本人 |
+| `502` | `PAYMENT_QUERY_FAILED` | 綠界查詢失敗、回應缺少或驗證失敗 |
 
 ## 後台商品管理
 
@@ -409,3 +419,4 @@
 - 購物車頁與結帳頁會顯示滿 `500` 免運，否則運費 `150`
 - 訂單 API 與資料庫沒有運費欄位
 - 首頁與商品頁加入購物車後，header badge 只做簡單遞增，不重新同步實際購物車總件數
+- 訂單詳情頁的付款成功畫面不是依靠 server callback 即時推送，而是回跳後再次查綠界 API 得出結果

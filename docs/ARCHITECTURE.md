@@ -66,7 +66,8 @@
 | `src/routes/authRoutes.js` | 註冊、登入、會員 profile API |
 | `src/routes/productRoutes.js` | 前台商品列表與詳情 API |
 | `src/routes/cartRoutes.js` | 雙模式購物車 API |
-| `src/routes/orderRoutes.js` | 會員訂單建立、查詢、付款模擬 |
+| `src/routes/orderRoutes.js` | 會員訂單建立、查詢、綠界付款與主動驗證 |
+| `src/services/ecpay.js` | ECPay CheckMacValue、AIO 付款欄位與 QueryTradeInfo 查詢 |
 | `src/routes/adminProductRoutes.js` | 後台商品 CRUD API |
 | `src/routes/adminOrderRoutes.js` | 後台訂單列表與詳情 API |
 | `src/routes/pageRoutes.js` | 前台與後台頁面路由 |
@@ -87,7 +88,7 @@
 | `public/js/pages/login.js` | 登入 / 註冊切頁與送單 |
 | `public/js/pages/checkout.js` | 會員結帳表單與送單 |
 | `public/js/pages/orders.js` | 會員訂單列表 |
-| `public/js/pages/order-detail.js` | 訂單詳情與付款模擬按鈕 |
+| `public/js/pages/order-detail.js` | 訂單詳情、綠界付款導向與主動驗證 |
 | `public/js/pages/admin-products.js` | 後台商品 CRUD UI |
 | `public/js/pages/admin-orders.js` | 後台訂單列表、狀態篩選、詳情 modal |
 
@@ -141,7 +142,9 @@
 | `/api/cart/:itemId` | `src/routes/cartRoutes.js` | JWT 或 `X-Session-Id` | 更新或刪除購物車項目 |
 | `/api/orders` | `src/routes/orderRoutes.js` | JWT | 建立訂單與查詢會員訂單 |
 | `/api/orders/:id` | `src/routes/orderRoutes.js` | JWT | 會員訂單詳情 |
-| `/api/orders/:id/pay` | `src/routes/orderRoutes.js` | JWT | 模擬付款成功/失敗 |
+| `/api/orders/payment/ecpay/callback` | `src/routes/orderRoutes.js` | 無 | ECPay Server Notify callback（本機不依賴） |
+| `/api/orders/:id/payment/ecpay/checkout` | `src/routes/orderRoutes.js` | JWT | 產生 AIO 付款表單欄位 |
+| `/api/orders/:id/payment/ecpay/verify` | `src/routes/orderRoutes.js` | JWT | 主動向綠界查詢付款狀態 |
 | `/api/admin/products` | `src/routes/adminProductRoutes.js` | JWT + admin | 後台商品列表 / 新增 |
 | `/api/admin/products/:id` | `src/routes/adminProductRoutes.js` | JWT + admin | 後台商品修改 / 刪除 |
 | `/api/admin/orders` | `src/routes/adminOrderRoutes.js` | JWT + admin | 後台訂單列表與狀態篩選 |
@@ -198,13 +201,16 @@
    - 清除該會員的 `cart_items`
 7. 回傳新訂單摘要。
 
-### 付款模擬
+### 綠界付款與主動驗證
 
 1. 使用者進入 `/orders/:id`。
 2. 前端呼叫 `/api/orders/:id` 取得詳情。
-3. 若狀態為 `pending`，畫面顯示「付款成功 / 付款失敗」兩個按鈕。
-4. 前端送出 `/api/orders/:id/pay` 搭配 `action: success` 或 `action: fail`。
-5. 後端只更新 `orders.status`，不會呼叫第三方金流、不會補發庫存。
+3. 若狀態為 `pending`，畫面顯示「前往綠界付款」與「重新確認付款狀態」按鈕。
+4. 前端呼叫 `POST /api/orders/:id/payment/ecpay/checkout` 取得 AIO 表單欄位。
+5. 前端建立隱藏表單並提交到綠界 `AioCheckOut/V5`。
+6. 綠界付款完成後，消費者瀏覽器透過 `ClientBackURL` 回到 `/orders/:id?payment=returned`。
+7. 前端呼叫 `POST /api/orders/:id/payment/ecpay/verify`。
+8. 後端呼叫 `QueryTradeInfo/V5` 主動向綠界查詢交易狀態，驗證 `CheckMacValue` 後再同步更新訂單。
 
 ## 統一回應格式
 
@@ -403,13 +409,13 @@ SQLite pragma：
 - `ECPAY_HASH_IV`
 - `ECPAY_ENV`
 
-但經全文搜尋，專案中沒有任何 ECPay SDK、HTTP 呼叫、簽章流程或 callback route。現況是：
+目前金流整合方式是：
 
-- 前端付款按鈕只是呼叫 `/api/orders/:id/pay`
-- 後端僅依 `action` 將狀態改為 `paid` 或 `failed`
-- 沒有外部付款頁、沒有回傳網址、沒有 webhook、沒有交易號儲存
-
-因此目前應視為「尚未串接第三方金流，只保留環境變數範本」。
+- 採 ECPay AIO Form POST 導向付款頁
+- `src/services/ecpay.js` 負責 CheckMacValue、AIO 表單欄位組裝與 `QueryTradeInfo` 主動查詢
+- `orders` 表會保存 `merchant_trade_no`, `ecpay_trade_no`, `payment_type`, `payment_date`, `payment_checked_at`
+- 仍保留 `ReturnURL` callback route，但本機模式不依賴 callback 作為最終付款確認來源
+- 付款最終確認來源是主動查詢 `QueryTradeInfo`
 
 ## 架構上的重要限制
 
@@ -419,3 +425,4 @@ SQLite pragma：
 - 付款失敗後不會回補庫存。
 - 前端顯示的運費與免運邏輯沒有寫入後端訂單金額。
 - 後台商品刪除只阻擋出現在 `pending` 訂單中的商品；若訂單已 `paid` 或 `failed`，商品可被刪除。
+- 本機開發無法直接接收綠界 Server Notify，因此必須以主動查詢綠界 API 驗證付款狀態。

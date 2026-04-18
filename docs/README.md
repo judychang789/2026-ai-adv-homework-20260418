@@ -1,13 +1,13 @@
 # Flower Life
 
-Flower Life 是一個花卉電商示範專案，涵蓋前台商品瀏覽、會員註冊登入、雙模式購物車、會員下單與付款模擬，以及後台商品與訂單管理。專案採用單一 Node.js 應用提供 API 與 EJS 頁面，前端互動邏輯以 Vue 3 CDN 版本掛載在頁面容器上，適合用來示範「伺服器渲染頁面 + 輕量前端互動 + SQLite 持久化」的整合實作。
+Flower Life 是一個花卉電商示範專案，涵蓋前台商品瀏覽、會員註冊登入、雙模式購物車、會員下單、綠界 ECPay 付款，以及後台商品與訂單管理。專案採用單一 Node.js 應用提供 API 與 EJS 頁面，前端互動邏輯以 Vue 3 CDN 版本掛載在頁面容器上，適合用來示範「伺服器渲染頁面 + 輕量前端互動 + SQLite 持久化」的整合實作。
 
 本專案的關鍵技術決策如下：
 
 - 後端沒有分層 service/repository，業務邏輯刻意保留在 route 檔案內，方便直接理解流程與修改 SQL。
 - 購物車採雙模式身份識別。登入會員用 JWT 綁定 `user_id`，訪客用 `X-Session-Id` 綁定 `session_id`。
 - 訂單只允許登入會員建立，訪客購物車不會直接結帳。
-- 訂單付款目前是站內模擬流程，不是真正第三方金流串接；雖然 `.env.example` 出現 ECPay 變數，但原始碼中沒有任何 ECPay 呼叫。
+- 訂單付款已串接綠界 ECPay AIO；付款完成後，前端回到本地頁面並主動呼叫綠界查詢 API 驗證交易結果。
 - API 文件透過 route 檔案內的 OpenAPI JSDoc 生成，`npm run openapi` 會產出 `openapi.json`。
 
 ## 技術棧
@@ -119,4 +119,5 @@ docs/                  專案文件與開發計畫
 - 購物車 API 若同時帶 JWT 與 `X-Session-Id`，會優先使用 JWT；一旦 JWT 無效，不會退回 session 模式，而是直接回 `401`。
 - 前端 `Auth.getAuthHeaders()` 無論是否登入都會送出 `X-Session-Id`，所以許多前台 API 可在訪客狀態下正常運作。
 - 前端結帳頁顯示了運費與免運門檻，但後端訂單 `total_amount` 只計算商品小計，未寫入運費。
-- `.env.example` 中的 `BASE_URL` 與 ECPay 變數目前未被任何程式碼使用，若未來要實作真實金流，應先補架構文件與測試。
+- `BASE_URL` 目前用於產生 ECPay 的 `ReturnURL` 與 `ClientBackURL`。
+- 本機開發模式無法接收綠界 Server Notify，因此付款確認依賴主動查詢 `QueryTradeInfo`，不是依賴 callback 必定送達。
