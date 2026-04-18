@@ -81,14 +81,17 @@ npm run openapi
 | `npm run openapi` | 從 route JSDoc 產生 `openapi.json` |
 | `npm run test` | 以 Vitest 依固定順序執行 API 測試 |
 
-## 預設帳號與種子資料
+## 開發測試資料
 
-- 管理員帳號來自 `src/database.js` 的 seed 流程。
-- 預設管理員信箱：`admin@hexschool.com`
-- 預設管理員密碼：`12345678`
-- 啟動後若 `products` 為空，會自動建立 8 筆花卉商品種子資料。
+本專案在開發與測試環境會自動建立管理員帳號與商品種子資料，方便功能驗證與助教測試。
 
-測試環境下仍會使用相同預設管理員資料，但 `bcrypt` salt rounds 會降到 `1` 以加快測試執行。
+- 管理員帳號由 `src/database.js` 的 seed 流程建立
+- 若 `products` 為空，會自動建立 8 筆花卉商品資料
+
+⚠️ 預設帳號資訊未公開於 README，請於本機 seed 設定或程式碼中查看  
+⚠️ 請勿在正式環境使用任何預設帳號
+
+測試環境下 `bcrypt` salt rounds 會降低以加快測試速度。
 
 ## 文件索引
 
